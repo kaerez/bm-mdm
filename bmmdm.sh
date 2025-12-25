@@ -1,8 +1,8 @@
 #!/bin/bash
-
-# ==========================================
-#  MDM Bypass & Account Creation Tool
-# ==========================================
+# ==============================================================================
+#  BM-MDM Utility
+#  Author: Erez Kalman
+# ==============================================================================
 
 # Define color codes
 RED='\033[1;31m'
@@ -73,7 +73,7 @@ get_next_available_uid() {
 # --- Header Display ---
 clear
 echo -e "${CYAN}==============================================${NC}"
-echo -e "${CYAN}       MDM Bypass & User Manager              ${NC}"
+echo -e "${CYAN}               BM-MDM Utility                 ${NC}"
 echo -e "${CYAN}==============================================${NC}"
 echo ""
 
@@ -135,7 +135,7 @@ if [ ! -d "$dscl_path" ]; then
 fi
 
 echo ""
-echo -e "${GRN}[1/3] Creating User '$username' (UID $TARGET_UID)...${NC}"
+echo -e "${GRN}[1/4] Creating User '$username' (UID $TARGET_UID)...${NC}"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
@@ -146,7 +146,7 @@ dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" NFSHomeD
 dscl -f "$dscl_path" localhost -passwd "/Local/Default/Users/$username" "$passw"
 dscl -f "$dscl_path" localhost -append "/Local/Default/Groups/admin" GroupMembership $username
 
-echo -e "${GRN}[2/3] Blocking MDM Domains...${NC}"
+echo -e "${GRN}[2/4] Blocking MDM Domains...${NC}"
 HOSTS_FILE="$DATA_VOL/private/etc/hosts"
 # Fallback if Data volume uses a symlink for etc (rare but possible in future OS)
 if [ ! -f "$HOSTS_FILE" ]; then
@@ -167,17 +167,23 @@ else
     echo -e "${RED}Warning: Could not locate hosts file. Network block skipped.${NC}"
 fi
 
-echo -e "${GRN}[3/3] Removing Enrollment Profiles...${NC}"
+echo -e "${GRN}[3/4] Removing Enrollment Profiles...${NC}"
 touch "$DATA_VOL/private/var/db/.AppleSetupDone"
-CONF_PATH="$DATA_VOL/private/var/db/ConfigurationProfiles/Settings"
+CONF_PATH="$DATA_VOL/private/var/db/ConfigurationProfiles"
 
 # Ensure directory exists to avoid errors on fresh systems
-mkdir -p "$CONF_PATH"
+mkdir -p "$CONF_PATH/Settings"
 
-rm -rf "$CONF_PATH/.cloudConfigHasActivationRecord"
-rm -rf "$CONF_PATH/.cloudConfigRecordFound"
-touch "$CONF_PATH/.cloudConfigProfileInstalled"
-touch "$CONF_PATH/.cloudConfigRecordNotFound"
+rm -rf "$CONF_PATH/Settings/.cloudConfigHasActivationRecord"
+rm -rf "$CONF_PATH/Settings/.cloudConfigRecordFound"
+touch "$CONF_PATH/Settings/.cloudConfigProfileInstalled"
+touch "$CONF_PATH/Settings/.cloudConfigRecordNotFound"
+
+# --- 4. Database Wipe (The Missing Fix) ---
+echo -e "${GRN}[4/4] System Cleanup...${NC}"
+# This removes the actual database of installed profiles
+rm -rf "$CONF_PATH/Store"
+rm -rf "$CONF_PATH/Setup"
 
 # --- Completion & Instructions ---
 echo ""
@@ -205,3 +211,5 @@ else
 fi
 
 echo -e "${NC}You may now restart your Mac.${NC}"
+
+
