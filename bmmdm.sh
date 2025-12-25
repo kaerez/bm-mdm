@@ -12,12 +12,12 @@ CYAN='\033[1;36m'
 NC='\033[0m'
 
 # --- 1. Dynamic Volume Detection ---
-# Universal detection for APFS Data Volumes (Intel & Apple Silicon)
+# Universal detection for APFS Data Volumes
 get_data_volume() {
-    # Try finding standard macOS Data volume pattern (e.g. "Macintosh HD - Data")
+    # Try finding standard macOS Data volume pattern
     vol=$(ls -d /Volumes/*" - Data" 2>/dev/null | head -n 1)
     if [ -z "$vol" ]; then
-        # Fallback: check for simple "Data" (common in custom setups)
+        # Fallback: check for simple "Data"
         vol=$(ls -d /Volumes/Data 2>/dev/null | head -n 1)
     fi
     echo "$vol"
@@ -31,9 +31,7 @@ check_filevault() {
         echo "Unknown"
         return
     fi
-    # fdesetup is the standard binary for FileVault management across all architectures
     fv_status=$(fdesetup status 2>/dev/null)
-    
     if [[ "$fv_status" == *"On"* ]]; then
         echo "Active"
     elif [[ "$fv_status" == *"Off"* ]]; then
@@ -57,16 +55,13 @@ fi
 # --- 3. Smart UID Calculation ---
 get_next_available_uid() {
     dscl_path="$DATA_VOL/private/var/db/dslocal/nodes/Default"
-    
-    # Safely finds the highest user ID > 500 to avoid conflicts
+    # Safely finds the highest user ID > 500
     last_uid=$(dscl -f "$dscl_path" localhost -list /Local/Default/Users UniqueID | awk '$2 >= 500 {print $2}' | sort -rn | head -1)
     
     if [ -z "$last_uid" ]; then
-        # Default start for fresh systems
-        echo "501"
+        echo "501" # Default for fresh systems
     else
-        # Increment highest found ID by 1
-        echo $((last_uid + 1))
+        echo $((last_uid + 1)) # Increment
     fi
 }
 
@@ -78,7 +73,7 @@ echo -e "${CYAN}==============================================${NC}"
 echo ""
 
 if [ -z "$DATA_VOL" ]; then
-    echo -e "${RED}CRITICAL ERROR: Data volume not found in /Volumes.${NC}"
+    echo -e "${RED}CRITICAL ERROR: Data volume not found.${NC}"
     echo -e "1. Open Disk Utility."
     echo -e "2. Right-click 'Macintosh HD - Data' (or your drive name) and select Mount."
     echo -e "3. Run this script again."
@@ -97,12 +92,10 @@ select opt in "${options[@]}"; do
         "Fresh Setup (New/Wiped Mac)")
             TARGET_UID="501"
             echo -e "${GRN}>> Mode: Fresh Setup${NC}"
-            echo -e "Creating Primary Admin (UID 501)..."
             break
             ;;
         "Preserve Data (Existing Users)")
             echo -e "${GRN}>> Mode: Preserve Data${NC}"
-            echo -e "Calculating safe UID to prevent account conflicts..."
             TARGET_UID=$(get_next_available_uid)
             echo -e "Target UID assigned: ${CYAN}$TARGET_UID${NC}"
             break
@@ -130,48 +123,55 @@ passw="${passw:=1234}"
 dscl_path="$DATA_VOL/private/var/db/dslocal/nodes/Default"
 
 if [ ! -d "$dscl_path" ]; then
-    echo -e "${RED}Error: User database not found at $dscl_path${NC}"
+    echo -e "${RED}Error: User database not found.${NC}"
     exit 1
 fi
 
 echo ""
 echo -e "${GRN}[1/4] Creating User '$username' (UID $TARGET_UID)...${NC}"
+# Create User Record
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UniqueID "$TARGET_UID"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" PrimaryGroupID "20"
-mkdir -p "$DATA_VOL/Users/$username"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" NFSHomeDirectory "/Users/$username"
 dscl -f "$dscl_path" localhost -passwd "/Local/Default/Users/$username" "$passw"
 dscl -f "$dscl_path" localhost -append "/Local/Default/Groups/admin" GroupMembership $username
 
+# Create Home Directory & Fix Permissions
+mkdir -p "$DATA_VOL/Users/$username"
+# Set owner to new user, group to staff (20)
+chown -R "$TARGET_UID:20" "$DATA_VOL/Users/$username"
+# Ensure standard permissions (755) so OS can read it
+chmod 755 "$DATA_VOL/Users/$username"
+
 echo -e "${GRN}[2/4] Blocking MDM Domains...${NC}"
 HOSTS_FILE="$DATA_VOL/private/etc/hosts"
-# Fallback if Data volume uses a symlink for etc (rare but possible in future OS)
 if [ ! -f "$HOSTS_FILE" ]; then
-    HOSTS_FILE="/Volumes/Macintosh HD/etc/hosts" 
+    # Fallback/Create if missing
+    mkdir -p "$DATA_VOL/private/etc"
+    touch "$HOSTS_FILE"
 fi
 
 if [ -f "$HOSTS_FILE" ]; then
-    # Clean check to avoid duplicate entries if script runs twice
     if ! grep -q "deviceenrollment.apple.com" "$HOSTS_FILE"; then
         echo "0.0.0.0 deviceenrollment.apple.com" >> "$HOSTS_FILE"
         echo "0.0.0.0 mdmenrollment.apple.com" >> "$HOSTS_FILE"
         echo "0.0.0.0 iprofiles.apple.com" >> "$HOSTS_FILE"
         echo "Blocked MDM domains."
     else
-        echo "MDM domains already blocked."
+        echo "Domains already blocked."
     fi
 else
-    echo -e "${RED}Warning: Could not locate hosts file. Network block skipped.${NC}"
+    echo -e "${RED}Warning: Could not access hosts file.${NC}"
 fi
 
 echo -e "${GRN}[3/4] Removing Enrollment Profiles...${NC}"
 touch "$DATA_VOL/private/var/db/.AppleSetupDone"
 CONF_PATH="$DATA_VOL/private/var/db/ConfigurationProfiles"
 
-# Ensure directory exists to avoid errors on fresh systems
+# Ensure directory exists
 mkdir -p "$CONF_PATH/Settings"
 
 rm -rf "$CONF_PATH/Settings/.cloudConfigHasActivationRecord"
@@ -179,33 +179,25 @@ rm -rf "$CONF_PATH/Settings/.cloudConfigRecordFound"
 touch "$CONF_PATH/Settings/.cloudConfigProfileInstalled"
 touch "$CONF_PATH/Settings/.cloudConfigRecordNotFound"
 
-# --- 4. Database Wipe (The Missing Fix) ---
+# --- 4. Database Wipe (Critical for Existing Users) ---
 echo -e "${GRN}[4/4] System Cleanup...${NC}"
-# This removes the actual database of installed profiles
+# Removes installed profile databases
 rm -rf "$CONF_PATH/Store"
 rm -rf "$CONF_PATH/Setup"
 
-# --- Completion & Instructions ---
+# --- Completion ---
 echo ""
 echo -e "${CYAN}==============================================${NC}"
 echo -e "${GRN}   SUCCESS: Operation Complete                ${NC}"
 echo -e "${CYAN}==============================================${NC}"
 echo ""
 
-# Logic: Display Secure Token instructions ONLY if:
-# 1. We created a secondary user (UID != 501)
-# 2. FileVault is NOT Inactive (Active or Unknown)
 if [[ "$TARGET_UID" != "501" ]] && [[ "$FV_RAW_STATUS" != "Inactive" ]]; then
     echo -e "${YEL}IMPORTANT NEXT STEPS (FileVault is $FV_RAW_STATUS):${NC}"
-    echo -e "1. Reboot your Mac."
-    echo -e "2. Login with your OLD User (to unlock the disk)."
-    echo -e "3. Open Terminal and run this command to fix disk access for '$username':"
-    echo ""
-    echo -e "${PUR}------------------------------------------------------------${NC}"
-    echo -e "sysadminctl -secureTokenOn $username -password - -adminUser OLD_USERNAME -adminPassword -"
-    echo -e "${PUR}------------------------------------------------------------${NC}"
-    echo -e "(Replace OLD_USERNAME with your current admin name)"
-    echo ""
+    echo -e "1. Reboot."
+    echo -e "2. Login with OLD User (to unlock disk)."
+    echo -e "3. Open Terminal, run:"
+    echo -e "${PUR}sysadminctl -secureTokenOn $username -password - -adminUser OLD_USERNAME -adminPassword -${NC}"
 else
     echo -e "You can now reboot and log in as '$username'."
 fi
