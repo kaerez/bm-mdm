@@ -12,12 +12,9 @@ CYAN='\033[1;36m'
 NC='\033[0m'
 
 # --- 1. Dynamic Volume Detection ---
-# Universal detection for APFS Data Volumes
 get_data_volume() {
-    # Try finding standard macOS Data volume pattern
     vol=$(ls -d /Volumes/*" - Data" 2>/dev/null | head -n 1)
     if [ -z "$vol" ]; then
-        # Fallback: check for simple "Data"
         vol=$(ls -d /Volumes/Data 2>/dev/null | head -n 1)
     fi
     echo "$vol"
@@ -55,13 +52,12 @@ fi
 # --- 3. Smart UID Calculation ---
 get_next_available_uid() {
     dscl_path="$DATA_VOL/private/var/db/dslocal/nodes/Default"
-    # Safely finds the highest user ID > 500
     last_uid=$(dscl -f "$dscl_path" localhost -list /Local/Default/Users UniqueID | awk '$2 >= 500 {print $2}' | sort -rn | head -1)
     
     if [ -z "$last_uid" ]; then
-        echo "501" # Default for fresh systems
+        echo "501" 
     else
-        echo $((last_uid + 1)) # Increment
+        echo $((last_uid + 1)) 
     fi
 }
 
@@ -128,8 +124,7 @@ if [ ! -d "$dscl_path" ]; then
 fi
 
 echo ""
-echo -e "${GRN}[1/4] Creating User '$username' (UID $TARGET_UID)...${NC}"
-# Create User Record
+echo -e "${GRN}[1/5] Creating User '$username' (UID $TARGET_UID)...${NC}"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" UserShell "/bin/zsh"
 dscl -f "$dscl_path" localhost -create "/Local/Default/Users/$username" RealName "$realName"
@@ -141,15 +136,12 @@ dscl -f "$dscl_path" localhost -append "/Local/Default/Groups/admin" GroupMember
 
 # Create Home Directory & Fix Permissions
 mkdir -p "$DATA_VOL/Users/$username"
-# Set owner to new user, group to staff (20)
 chown -R "$TARGET_UID:20" "$DATA_VOL/Users/$username"
-# Ensure standard permissions (755) so OS can read it
 chmod 755 "$DATA_VOL/Users/$username"
 
-echo -e "${GRN}[2/4] Blocking MDM Domains...${NC}"
+echo -e "${GRN}[2/5] Blocking MDM Domains...${NC}"
 HOSTS_FILE="$DATA_VOL/private/etc/hosts"
 if [ ! -f "$HOSTS_FILE" ]; then
-    # Fallback/Create if missing
     mkdir -p "$DATA_VOL/private/etc"
     touch "$HOSTS_FILE"
 fi
@@ -167,23 +159,69 @@ else
     echo -e "${RED}Warning: Could not access hosts file.${NC}"
 fi
 
-echo -e "${GRN}[3/4] Removing Enrollment Profiles...${NC}"
-touch "$DATA_VOL/private/var/db/.AppleSetupDone"
+# --- 3. Unlock & Wipe ---
+echo -e "${GRN}[3/5] System Cleanup & Unlock...${NC}"
+
 CONF_PATH="$DATA_VOL/private/var/db/ConfigurationProfiles"
+MAN_PREF_PATH="$DATA_VOL/Library/Managed Preferences"
 
-# Ensure directory exists
+# Helper: Unlock, Open Permissions, Reset Owner
+unlock_target() {
+    local path="$1"
+    if [ -d "$path" ]; then
+        echo "  Unlocking: $path"
+        chflags -R nouchg,noschg "$path" 2>/dev/null
+        chmod -R 777 "$path" 2>/dev/null
+        chown -R root:wheel "$path" 2>/dev/null
+    fi
+}
+
+# 1. Clean Managed Preferences
+unlock_target "$MAN_PREF_PATH"
+if [ -d "$MAN_PREF_PATH" ]; then
+    rm -rf "$MAN_PREF_PATH"/*
+    echo "  Wiped Managed Preferences."
+fi
+
+# 2. Clean Configuration Profiles
+unlock_target "$CONF_PATH"
+if [ -d "$CONF_PATH" ]; then
+    rm -rf "$CONF_PATH"/*
+    echo "  Wiped Configuration Profiles."
+fi
+
+# --- 4. Re-Apply Bypass Flags (PERSISTENCE) ---
+echo -e "${GRN}[4/5] Restoring Bypass Flags...${NC}"
+touch "$DATA_VOL/private/var/db/.AppleSetupDone"
 mkdir -p "$CONF_PATH/Settings"
-
-rm -rf "$CONF_PATH/Settings/.cloudConfigHasActivationRecord"
-rm -rf "$CONF_PATH/Settings/.cloudConfigRecordFound"
 touch "$CONF_PATH/Settings/.cloudConfigProfileInstalled"
 touch "$CONF_PATH/Settings/.cloudConfigRecordNotFound"
+echo "  Bypass flags restored."
 
-# --- 4. Database Wipe (Critical for Existing Users) ---
-echo -e "${GRN}[4/4] System Cleanup...${NC}"
-# Removes installed profile databases
-rm -rf "$CONF_PATH/Store"
-rm -rf "$CONF_PATH/Setup"
+# --- 5. Take Total Control ---
+echo -e "${GRN}[5/5] Taking Ownership of System Paths...${NC}"
+
+# Function to grant user ownership and admin permissions
+take_control() {
+    local path="$1"
+    if [ -d "$path" ]; then
+        echo "  Taking control: $path"
+        # 1. Force Unlock
+        chflags -R nouchg,noschg "$path" 2>/dev/null
+        # 2. Set Owner to New User ($TARGET_UID) and Group to Admin (80)
+        chown -R "$TARGET_UID:80" "$path" 2>/dev/null
+        # 3. Grant Full Permissions to User & Group (775 = rwx rwx r-x)
+        chmod -R 775 "$path" 2>/dev/null
+    else
+        echo "  Skipped (Not Found): $path"
+    fi
+}
+
+# Paths requested for total control
+take_control "$DATA_VOL/Applications"
+take_control "$DATA_VOL/Library/SystemExtensions"
+take_control "$DATA_VOL/Library/LaunchAgents"
+take_control "$DATA_VOL/Library/LaunchDaemons"
 
 # --- Completion ---
 echo ""
@@ -203,5 +241,3 @@ else
 fi
 
 echo -e "${NC}You may now restart your Mac.${NC}"
-
-
