@@ -8,6 +8,9 @@
 * **Data Safe:** Unlike other scripts, this **does not rename your hard drive**, preventing Time Machine and path corruption.
 * **Smart UID Calculation:** Automatically detects existing users to prevent account conflicts (no more overwriting User 501).
 * **Context Aware:** Detects FileVault encryption status and provides specific instructions for unlocking the disk.
+* **Network Block:** Prevents re-enrollment by blocking Apple's MDM servers in the hosts file.
+* **Deep Clean:** Wipes stubborn Managed Preferences and Profile databases.
+* **Total Control:** Resets ownership of Applications and System Extensions to the new user.
 
 ---
 
