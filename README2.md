@@ -1,6 +1,6 @@
 # Advanced Service Termination & Cleanup 🧹
 
-> **Companion Module to [Bye Mac MDM (BM-MDM)](https://github.com/kaerez/bm-mdm)**
+> **Companion Module to [Bye Mac MDM (BM-MDM)](README.md)**
 > While **BM-MDM** handles the operating system level (Apple MDM enrollment), this guide handles the **application level**—specifically stubborn third-party agents (Cisco Secure Client, CrowdStrike Falcon, GlobalProtect) that persist effectively like malware.
 
 ### Disclaimer & No Liability ⚖️
