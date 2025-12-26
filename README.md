@@ -12,6 +12,8 @@
 * **Deep Clean:** Wipes stubborn Managed Preferences and Profile databases.
 * **Total Control:** Resets ownership of Applications and System Extensions to the new user.
 
+### Also see the [Advanced Service Termination & Cleanup](https://github.com/kaerez/bm-mdm/README2.md) Companion Module
+
 ---
 
 ### Disclaimer & No Liability ⚖️
